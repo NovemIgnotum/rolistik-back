@@ -1,0 +1,115 @@
+name: CI Workflow
+
+on:
+  push:
+    branches:
+      - dev
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    name: Run Tests
+
+    outputs:
+      tests_passed: ${{ steps.set-output.outputs.result }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pytest
+
+      - name: Run pytest
+        id: run_tests
+        continue-on-error: true
+        run: |
+          pytest --tb=short -q --disable-warnings
+          echo "TEST_EXIT_CODE=$?" >> $GITHUB_ENV
+
+      - name: Set test result output
+        id: set-output
+        run: |
+          echo "result=${TEST_EXIT_CODE:-1}" >> $GITHUB_OUTPUT
+
+  handle_failure:
+    needs: test
+    if: ${{ needs.test.outputs.tests_passed != '0' }}
+    runs-on: ubuntu-latest
+    name: Handle Test Failure
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create failure branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          branch_name="failure-$(date +'%Y%m%d-%H%M%S')"
+          git checkout -b $branch_name
+          git push origin $branch_name
+
+      - name: Revert last commit (excluding workflows)
+        run: |
+          git checkout dev
+          git revert --no-commit HEAD
+          git restore --staged .github/workflows/*
+          git checkout -- .github/workflows/*
+          git commit -m "Revert last commit (excluding workflows)"
+          git push origin dev
+
+  handle_success:
+    needs: test
+    if: ${{ needs.test.outputs.tests_passed == '0' }}
+    runs-on: ubuntu-latest
+    name: Merge to Main
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Merge dev to main
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git checkout main
+          git merge origin/dev --no-ff -m "Auto-merge from dev [CI]"
+          git push origin main
+
+  notify:
+    if: always()
+    needs: [handle_failure, handle_success]
+    runs-on: ubuntu-latest
+    name: Notify Discord
+
+    steps:
+      - name: Notify Discord
+        uses: Ilshidur/action-discord@master
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+        with:
+          args: |
+            📢 Nouveau push sur **${{ github.repository }}** par **${{ github.actor }}**.
+            ✅ Tests réussis : ${{ needs.test.outputs.tests_passed == '0' }}
+            🧪 État du push : ${{ needs.test.outputs.tests_passed == '0' && 'Succès' || 'Échec' }}
+            🔁 Branche de notification : `${{ github.ref_name }}`
