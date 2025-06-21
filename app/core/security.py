@@ -3,8 +3,8 @@ Module de sécurité pour l'authentification et l'autorisation
 Gère JWT, hashage des mots de passe, et validation des tokens
 """
 
-from datetime import datetime, timedelta
-from typing import Optional, Union
+from datetime import datetime, timedelta, timezone
+from typing import Optional
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from fastapi import HTTPException, status
@@ -63,9 +63,9 @@ def create_access_token(
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.now(datetime.timestamp) + expires_delta
+        expire = lambda : datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(datetime.timestamp) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+        expire = lambda : datetime.now(timezone.utc) + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     
     to_encode.update({"exp": expire})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -90,9 +90,9 @@ def create_refresh_token(
     to_encode = data.copy()
     
     if expires_delta:
-        expire = datetime.now(datetime.timestamp) + expires_delta
+        expire = lambda : datetime.now(timezone.utc) + expires_delta
     else:
-        expire = datetime.now(datetime.timestamp) + timedelta(days=7)
+        expire = lambda : datetime.now(timezone.utc) + timedelta(days=7)
     
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
@@ -200,7 +200,7 @@ def create_token_data(user_id: str, username: Optional[str] = None) -> dict:
     return {
         "sub": user_id,
         "username": username,
-        "iat": datetime.now(datetime.timestamp),
+        "iat": lambda: datetime.now(timezone.utc),
     }
 
 

@@ -1,9 +1,9 @@
-from beanie import Indexed
+from beanie import Document
 from pydantic import EmailStr, Field
 from typing import Optional
-from app.models.base import BaseModel
+from datetime import datetime, timezone
 
-class User(BaseModel):
+class User(Document):
     email: EmailStr = Field(unique=True, index=True)
     username: str = Field(unique=True, index=True)
     hashed_password: str
@@ -11,12 +11,10 @@ class User(BaseModel):
     is_active: bool = True
     is_gamemaster: bool = False
     is_superuser: bool = False
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    updated_at: Optional[datetime] = None
+    last_login: Optional[datetime] = None
     
     class Settings:
-        name = "Users"
-        
-class UserInDB(User):
-    id: str = Field(alias="_id")
-    
-    class Settings:
-        name = "UsersInDB"
+        name = "users"
+        use_state_management = True
